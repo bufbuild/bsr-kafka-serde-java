@@ -2,7 +2,11 @@
 
 # bsr-kafka-serde-java
 
+[![License](https://img.shields.io/github/license/bufbuild/bsr-kafka-serde-java?color=blue)](https://github.com/bufbuild/bsr-kafka-serde-java/blob/main/LICENSE)
 [![CI](https://github.com/bufbuild/bsr-kafka-serde-java/actions/workflows/ci.yaml/badge.svg)](https://github.com/bufbuild/bsr-kafka-serde-java/actions/workflows/ci.yaml)
+![Maven Central Version](https://img.shields.io/maven-central/v/build.buf.bsr.kafka/bsr-kafka-serde)
+[![javadoc](https://javadoc.io/badge2/build.buf.bsr.kafka/bsr-kafka-serde/javadoc.svg)](https://javadoc.io/doc/build.buf.bsr.kafka/bsr-kafka-serde)
+[![Slack](https://img.shields.io/badge/slack-buf-%23e01563)][badges_slack]
 
 [bsr-kafka-serde-java][bsr-kafka-serde-java] provides a Kafka serializer and deserializer in Java for working with schemas defined in the [Buf Schema Registry][bsr].
 It pairs with [Bufstream's semantic validation][bufstream-semantic-validation] feature, using Kafka record headers to automatically convert record values to and from Protobuf.
@@ -127,10 +131,15 @@ public class ExampleConsumer {
 
 </details>
 
+## Status: Beta
+
+This library isn't stable yet. However, the final shape is unlikely to change drastically—future edits will be somewhat minor.
+
 ## Legal
 
 Offered under the [Apache 2 license][license].
 
+[badges_slack]: https://buf.build/links/slack
 [bsr]: https://buf.build/docs/bsr/
 [bsr-kafka-serde-java]: https://github.com/bufbuild/bsr-kafka-serde-java
 [buf]: https://buf.build
