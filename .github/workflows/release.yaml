@@ -1,0 +1,73 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        description: Optional release version (without the 'v' prefix).
+        required: false
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+env:
+  APP_ID: 2123757
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate Version
+        if: ${{ startsWith(github.event.inputs.version, 'v') }}
+        run: |
+          echo "error: version must not start with 'v'."
+          exit 1
+      - name: Generate token
+        id: generate_token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ secrets.TOKEN_EXCHANGE_GH_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+      # Setup go for Buf CLI's license-header support
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: 'stable'
+          cache: false # Disable built-in caching as there is no go.mod/go.sum
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/pom.xml') }} # pom.xml contains Buf CLI version
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Setup Java JDK
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          check-latest: true
+          cache: 'maven'
+          server-id: 'central'
+          server-username: SONATYPE_USERNAME
+          server-password: SONATYPE_PASSWORD
+      - name: Release
+        env:
+          MAVEN_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        run: |
+          git config --global user.email "238329651+app-token-bsr-kafka-serde-java[bot]@users.noreply.github.com"
+          git config --global user.name "app-token-bsr-kafka-serde-java[bot]"
+          ./mvnw --batch-mode -P release release:prepare -DreleaseVersion=${RELEASE_VERSION}
+          ./mvnw --batch-mode -P release release:perform -DlocalCheckout=true
+      - name: Rollback
+        if: ${{ failure() }}
+        run: |
+          ./mvnw --batch-mode -P release release:rollback

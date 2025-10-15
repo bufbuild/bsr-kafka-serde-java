@@ -1,0 +1,15 @@
+<configuration>
+    <shutdownHook/>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %highlight(%-5level) %logger{36} [%X{test}] %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="build.buf.bsr.kafka" level="INFO"/>
+
+    <root level="WARN">
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>

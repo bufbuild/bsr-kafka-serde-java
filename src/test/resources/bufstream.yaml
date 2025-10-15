@@ -1,0 +1,21 @@
+version: v1beta1
+#cluster: <string>
+#zone: <string>
+
+kafka:
+  listeners:
+    # The unique name of the listener (required if more than one listener is defined).
+    - name: kafka
+      # The address the Kafka server should listen on.
+      listen_address: "0.0.0.0:9092"
+      # The address clients should use to connect to the Kafka server, if different
+      # from `listen_address`. This can be used to ensure clients connect via a
+      # load balancer or gateway.
+      advertise_address: "localhost:29092"
+
+logging:
+  level: info
+
+schema_registry:
+  bsr:
+    host: demo.buf.dev
