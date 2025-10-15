@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Keep key dependencies on current major versions for compatibility
+    ignore:
+      - dependency-name: "org.apache.kafka:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "com.google.protobuf:*"
+        update-types: ["version-update:semver-major"]
