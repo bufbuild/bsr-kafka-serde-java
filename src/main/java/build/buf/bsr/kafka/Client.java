@@ -33,10 +33,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ThreadLocalRandom;
 import javax.net.ssl.SSLContext;
 
 final class Client implements BSRClient {
@@ -56,6 +58,17 @@ final class Client implements BSRClient {
   private static final String USER_AGENT = buildUserAgent();
   private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(30);
   static final Duration NEGATIVE_CACHE_EXPIRY = Duration.ofMinutes(1);
+  private static final Set<Integer> RETRYABLE_STATUS_CODES =
+      Set.of(
+          429, // Unavailable (also ResourceExhausted)
+          502, // Unavailable
+          503, // Unavailable
+          504, // Unavailable
+          500 // Internal
+          );
+  private static final long INITIAL_BACKOFF_MS = 1_000;
+  private static final long MAX_TOTAL_BACKOFF_MS = 30_000;
+  private static final long JITTER_MAX_MS = 100;
 
   private final String host;
   private final String token;
@@ -154,29 +167,58 @@ final class Client implements BSRClient {
             .timeout(DEFAULT_REQUEST_TIMEOUT)
             .POST(HttpRequest.BodyPublishers.ofByteArray(request.toByteArray()))
             .build();
-    try {
-      HttpResponse<byte[]> response =
-          client.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-      if (response.statusCode() != 200) {
-        String responseBody = new String(response.body(), StandardCharsets.UTF_8);
-        throw new ClientException(
-            String.format(
-                "%s failed: HTTP %d - %s",
-                METHOD_GET_FILE_DESCRIPTOR_SET, response.statusCode(), responseBody));
+
+    long totalBackoffMs = 0;
+    long currentBackoffMs = INITIAL_BACKOFF_MS;
+
+    while (true) {
+      try {
+        HttpResponse<byte[]> response =
+            client.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
+        if (response.statusCode() != 200) {
+          String responseBody = new String(response.body(), StandardCharsets.UTF_8);
+
+          // Check if we should retry on this status code
+          boolean shouldRetry = RETRYABLE_STATUS_CODES.contains(response.statusCode());
+
+          if (shouldRetry && totalBackoffMs < MAX_TOTAL_BACKOFF_MS) {
+            // Calculate backoff with jitter to prevent thundering herd
+            long remainingBackoffMs = MAX_TOTAL_BACKOFF_MS - totalBackoffMs;
+            long jitterMs = ThreadLocalRandom.current().nextLong(JITTER_MAX_MS);
+            long backoffMs = Math.min(currentBackoffMs + jitterMs, remainingBackoffMs);
+
+            try {
+              Thread.sleep(backoffMs);
+            } catch (InterruptedException ie) {
+              Thread.currentThread().interrupt();
+              throw new ClientException(
+                  String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), ie);
+            }
+
+            totalBackoffMs += backoffMs;
+            currentBackoffMs *= 2; // Exponential backoff
+          } else {
+            throw new ClientException(
+                String.format(
+                    "%s failed: HTTP %d - %s",
+                    METHOD_GET_FILE_DESCRIPTOR_SET, response.statusCode(), responseBody));
+          }
+        } else {
+          GetFileDescriptorSetResponse bsrResponse =
+              GetFileDescriptorSetResponse.parseFrom(response.body());
+          Descriptors.Descriptor descriptor =
+              findMessageDescriptor(bsrResponse.getFileDescriptorSet(), messageFQN);
+          if (descriptor == null) {
+            throw new ClientException("failed to lookup message descriptor for " + messageFQN);
+          }
+          return descriptor;
+        }
+      } catch (IOException e) {
+        throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
       }
-      GetFileDescriptorSetResponse bsrResponse =
-          GetFileDescriptorSetResponse.parseFrom(response.body());
-      Descriptors.Descriptor descriptor =
-          findMessageDescriptor(bsrResponse.getFileDescriptorSet(), messageFQN);
-      if (descriptor == null) {
-        throw new ClientException("failed to lookup message descriptor for " + messageFQN);
-      }
-      return descriptor;
-    } catch (IOException e) {
-      throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
     }
   }
 
