@@ -72,7 +72,7 @@ class ClientTest {
       server.start();
 
       String host = server.getHostName() + ":" + server.getPort();
-      Client client = new Client(host, null, certificates.sslContext());
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
       String messageFQN = "bufstream.demo.v1.EmailUpdated";
       Descriptors.Descriptor messageDescriptor =
@@ -109,13 +109,13 @@ class ClientTest {
       for (int i = 1; i < numThreads; i++) {
         // Enqueue up to the maximum number of calls. We only expect one call to be made due to
         // negative caching.
-        server.enqueue(new MockResponse().setResponseCode(500));
+        server.enqueue(new MockResponse().setResponseCode(400));
       }
       server.start();
 
       String host = server.getHostName() + ":" + server.getPort();
       TestClock clock = new TestClock();
-      Client client = new Client(host, null, certificates.sslContext(), clock);
+      Client client = new Client(host, null, certificates.sslContext(), clock, 10, 500);
 
       String commitID = UUID.randomUUID().toString().replace("-", "");
       String messageFQN = "bufstream.demo.v1.EmailUpdated";
@@ -162,13 +162,136 @@ class ClientTest {
         for (Future<Descriptors.Descriptor> future : futures) {
           Assertions.assertThatThrownBy(future::get)
               .hasRootCauseInstanceOf(ClientException.class)
-              .hasMessageContaining("HTTP 500");
+              .hasMessageContaining("HTTP 400");
         }
         // After expiration only a single additional call should've gone through.
         Assertions.assertThat(server.getRequestCount()).isEqualTo(2);
       } finally {
         executor.shutdown();
       }
+    }
+  }
+
+  @Test
+  void testRetryOnRetryableStatusCodes() throws Exception {
+    Path resourcePath = Paths.get("src/test/resources/email-updated-fds.binpb");
+    DescriptorProtos.FileDescriptorSet savedFds;
+    try (FileInputStream fis = new FileInputStream(resourcePath.toFile())) {
+      savedFds = DescriptorProtos.FileDescriptorSet.parseFrom(fis);
+    }
+
+    HeldCertificate serverCertificate = createSelfSignedCertificate();
+    HandshakeCertificates certificates =
+        new HandshakeCertificates.Builder()
+            .heldCertificate(serverCertificate)
+            .addTrustedCertificate(serverCertificate.certificate())
+            .build();
+
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(certificates.sslSocketFactory(), false);
+
+      // First request returns 503, second returns 429, third returns 200
+      server.enqueue(new MockResponse().setResponseCode(503).setBody("Service Unavailable"));
+      server.enqueue(new MockResponse().setResponseCode(429).setBody("Too Many Requests"));
+
+      Buffer buffer = new Buffer();
+      GetFileDescriptorSetResponse response =
+          GetFileDescriptorSetResponse.newBuilder().setFileDescriptorSet(savedFds).build();
+      buffer.write(response.toByteArray());
+      server.enqueue(new MockResponse().setBody(buffer));
+
+      server.start();
+
+      String host = server.getHostName() + ":" + server.getPort();
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
+
+      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      long startTime = System.currentTimeMillis();
+      Descriptors.Descriptor messageDescriptor =
+          client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN);
+      long elapsed = System.currentTimeMillis() - startTime;
+
+      Assertions.assertThat(messageDescriptor).isNotNull();
+      Assertions.assertThat(messageDescriptor.getFullName()).isEqualTo(messageFQN);
+
+      // Verify we made 3 requests (2 failed, 1 successful)
+      Assertions.assertThat(server.getRequestCount()).isEqualTo(3);
+
+      // Verify exponential backoff was applied (10ms + 20ms = 30ms minimum)
+      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(30);
+    }
+  }
+
+  @Test
+  void testRetryExhaustion() throws IOException {
+    HeldCertificate serverCertificate = createSelfSignedCertificate();
+    HandshakeCertificates certificates =
+        new HandshakeCertificates.Builder()
+            .heldCertificate(serverCertificate)
+            .addTrustedCertificate(serverCertificate.certificate())
+            .build();
+
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(certificates.sslSocketFactory(), false);
+
+      // Return 503 repeatedly to exhaust retries
+      for (int i = 0; i < 10; i++) {
+        server.enqueue(new MockResponse().setResponseCode(503).setBody("Service Unavailable"));
+      }
+      server.start();
+
+      String host = server.getHostName() + ":" + server.getPort();
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
+
+      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      long startTime = System.currentTimeMillis();
+      Assertions.assertThatThrownBy(
+              () -> client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN))
+          .isInstanceOf(ClientException.class)
+          .hasMessageContaining("HTTP 503");
+      long elapsed = System.currentTimeMillis() - startTime;
+
+      // Verify retries were attempted with exponential backoff up to 500ms total
+      // Retries: 10ms, 20ms, 40ms, 80ms, 160ms, 190ms (remaining) = 500ms total
+      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(500);
+
+      // Verify multiple requests were made
+      Assertions.assertThat(server.getRequestCount()).isGreaterThan(1);
+    }
+  }
+
+  @Test
+  void testNoRetryOnNonRetryableStatusCode() throws IOException {
+    HeldCertificate serverCertificate = createSelfSignedCertificate();
+    HandshakeCertificates certificates =
+        new HandshakeCertificates.Builder()
+            .heldCertificate(serverCertificate)
+            .addTrustedCertificate(serverCertificate.certificate())
+            .build();
+
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(certificates.sslSocketFactory(), false);
+
+      // Return 404 which should not be retried
+      server.enqueue(new MockResponse().setResponseCode(404).setBody("Not Found"));
+      server.start();
+
+      String host = server.getHostName() + ":" + server.getPort();
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
+
+      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      long startTime = System.currentTimeMillis();
+      Assertions.assertThatThrownBy(
+              () -> client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN))
+          .isInstanceOf(ClientException.class)
+          .hasMessageContaining("HTTP 404");
+      long elapsed = System.currentTimeMillis() - startTime;
+
+      // Should fail immediately without retrying
+      Assertions.assertThat(elapsed).isLessThan(500);
+
+      // Verify only one request was made
+      Assertions.assertThat(server.getRequestCount()).isEqualTo(1);
     }
   }
 
