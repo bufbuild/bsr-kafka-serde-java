@@ -66,28 +66,54 @@ final class Client implements BSRClient {
           504, // Unavailable
           500 // Internal
           );
-  private static final long INITIAL_BACKOFF_MS = 1_000;
-  private static final long MAX_TOTAL_BACKOFF_MS = 30_000;
+  private static final long DEFAULT_INITIAL_BACKOFF_MS = 1_000;
+  private static final long DEFAULT_MAX_TOTAL_BACKOFF_MS = 30_000;
   private static final long JITTER_MAX_MS = 100;
 
   private final String host;
   private final String token;
   private final Clock clock;
   private final HttpClient client;
+  private final long initialBackoffMs;
+  private final long maxTotalBackoffMs;
   private final ConcurrentMap<CacheKey, CacheEntry> cache = new ConcurrentHashMap<>();
 
   Client(String host, String token) {
-    this(host, token, null, Clock.systemUTC());
+    this(
+        host,
+        token,
+        null,
+        Clock.systemUTC(),
+        DEFAULT_INITIAL_BACKOFF_MS,
+        DEFAULT_MAX_TOTAL_BACKOFF_MS);
   }
 
   Client(String host, String token, SSLContext sslContext) {
-    this(host, token, sslContext, Clock.systemUTC());
+    this(
+        host,
+        token,
+        sslContext,
+        Clock.systemUTC(),
+        DEFAULT_INITIAL_BACKOFF_MS,
+        DEFAULT_MAX_TOTAL_BACKOFF_MS);
   }
 
   Client(String host, String token, SSLContext sslContext, Clock clock) {
+    this(host, token, sslContext, clock, DEFAULT_INITIAL_BACKOFF_MS, DEFAULT_MAX_TOTAL_BACKOFF_MS);
+  }
+
+  Client(
+      String host,
+      String token,
+      SSLContext sslContext,
+      Clock clock,
+      long initialBackoffMs,
+      long maxTotalBackoffMs) {
     this.host = Objects.requireNonNull(host);
     this.token = token;
     this.clock = Objects.requireNonNull(clock);
+    this.initialBackoffMs = initialBackoffMs;
+    this.maxTotalBackoffMs = maxTotalBackoffMs;
     HttpClient.Builder builder = HttpClient.newBuilder();
     if (sslContext != null) {
       builder.sslContext(sslContext);
@@ -169,21 +195,19 @@ final class Client implements BSRClient {
             .build();
 
     long totalBackoffMs = 0;
-    long currentBackoffMs = INITIAL_BACKOFF_MS;
+    long currentBackoffMs = this.initialBackoffMs;
 
     while (true) {
       try {
         HttpResponse<byte[]> response =
             client.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
         if (response.statusCode() != 200) {
-          String responseBody = new String(response.body(), StandardCharsets.UTF_8);
-
           // Check if we should retry on this status code
           boolean shouldRetry = RETRYABLE_STATUS_CODES.contains(response.statusCode());
 
-          if (shouldRetry && totalBackoffMs < MAX_TOTAL_BACKOFF_MS) {
+          if (shouldRetry && totalBackoffMs < this.maxTotalBackoffMs) {
             // Calculate backoff with jitter to prevent thundering herd
-            long remainingBackoffMs = MAX_TOTAL_BACKOFF_MS - totalBackoffMs;
+            long remainingBackoffMs = this.maxTotalBackoffMs - totalBackoffMs;
             long jitterMs = ThreadLocalRandom.current().nextLong(JITTER_MAX_MS);
             long backoffMs = Math.min(currentBackoffMs + jitterMs, remainingBackoffMs);
 
@@ -201,7 +225,9 @@ final class Client implements BSRClient {
             throw new ClientException(
                 String.format(
                     "%s failed: HTTP %d - %s",
-                    METHOD_GET_FILE_DESCRIPTOR_SET, response.statusCode(), responseBody));
+                    METHOD_GET_FILE_DESCRIPTOR_SET,
+                    response.statusCode(),
+                    new String(response.body(), StandardCharsets.UTF_8)));
           }
         } else {
           GetFileDescriptorSetResponse bsrResponse =

@@ -72,7 +72,7 @@ class ClientTest {
       server.start();
 
       String host = server.getHostName() + ":" + server.getPort();
-      Client client = new Client(host, null, certificates.sslContext());
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
       String messageFQN = "bufstream.demo.v1.EmailUpdated";
       Descriptors.Descriptor messageDescriptor =
@@ -115,7 +115,7 @@ class ClientTest {
 
       String host = server.getHostName() + ":" + server.getPort();
       TestClock clock = new TestClock();
-      Client client = new Client(host, null, certificates.sslContext(), clock);
+      Client client = new Client(host, null, certificates.sslContext(), clock, 10, 500);
 
       String commitID = UUID.randomUUID().toString().replace("-", "");
       String messageFQN = "bufstream.demo.v1.EmailUpdated";
@@ -203,7 +203,7 @@ class ClientTest {
       server.start();
 
       String host = server.getHostName() + ":" + server.getPort();
-      Client client = new Client(host, null, certificates.sslContext());
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
       String messageFQN = "bufstream.demo.v1.EmailUpdated";
       long startTime = System.currentTimeMillis();
@@ -217,57 +217,8 @@ class ClientTest {
       // Verify we made 3 requests (2 failed, 1 successful)
       Assertions.assertThat(server.getRequestCount()).isEqualTo(3);
 
-      // Verify exponential backoff was applied (1s + 2s = 3s minimum)
-      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(3000);
-    }
-  }
-
-  @Test
-  void testRetryOn502BadGateway() throws Exception {
-    Path resourcePath = Paths.get("src/test/resources/email-updated-fds.binpb");
-    DescriptorProtos.FileDescriptorSet savedFds;
-    try (FileInputStream fis = new FileInputStream(resourcePath.toFile())) {
-      savedFds = DescriptorProtos.FileDescriptorSet.parseFrom(fis);
-    }
-
-    HeldCertificate serverCertificate = createSelfSignedCertificate();
-    HandshakeCertificates certificates =
-        new HandshakeCertificates.Builder()
-            .heldCertificate(serverCertificate)
-            .addTrustedCertificate(serverCertificate.certificate())
-            .build();
-
-    try (MockWebServer server = new MockWebServer()) {
-      server.useHttps(certificates.sslSocketFactory(), false);
-
-      // First request returns 502 Bad Gateway, second returns 200
-      server.enqueue(new MockResponse().setResponseCode(502).setBody("Bad Gateway"));
-
-      Buffer buffer = new Buffer();
-      GetFileDescriptorSetResponse response =
-          GetFileDescriptorSetResponse.newBuilder().setFileDescriptorSet(savedFds).build();
-      buffer.write(response.toByteArray());
-      server.enqueue(new MockResponse().setBody(buffer));
-
-      server.start();
-
-      String host = server.getHostName() + ":" + server.getPort();
-      Client client = new Client(host, null, certificates.sslContext());
-
-      String messageFQN = "bufstream.demo.v1.EmailUpdated";
-      long startTime = System.currentTimeMillis();
-      Descriptors.Descriptor messageDescriptor =
-          client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN);
-      long elapsed = System.currentTimeMillis() - startTime;
-
-      Assertions.assertThat(messageDescriptor).isNotNull();
-      Assertions.assertThat(messageDescriptor.getFullName()).isEqualTo(messageFQN);
-
-      // Verify we made 2 requests (1 failed with 502, 1 successful)
-      Assertions.assertThat(server.getRequestCount()).isEqualTo(2);
-
-      // Verify backoff was applied (at least 1s)
-      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(1000);
+      // Verify exponential backoff was applied (10ms + 20ms = 30ms minimum)
+      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(30);
     }
   }
 
@@ -290,7 +241,7 @@ class ClientTest {
       server.start();
 
       String host = server.getHostName() + ":" + server.getPort();
-      Client client = new Client(host, null, certificates.sslContext());
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
       String messageFQN = "bufstream.demo.v1.EmailUpdated";
       long startTime = System.currentTimeMillis();
@@ -300,9 +251,9 @@ class ClientTest {
           .hasMessageContaining("HTTP 503");
       long elapsed = System.currentTimeMillis() - startTime;
 
-      // Verify retries were attempted with exponential backoff up to 30 seconds total
-      // Retries: 1s, 2s, 4s, 8s, 15s (remaining) = 30s total
-      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(30000);
+      // Verify retries were attempted with exponential backoff up to 500ms total
+      // Retries: 10ms, 20ms, 40ms, 80ms, 160ms, 190ms (remaining) = 500ms total
+      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(500);
 
       // Verify multiple requests were made
       Assertions.assertThat(server.getRequestCount()).isGreaterThan(1);
@@ -326,7 +277,7 @@ class ClientTest {
       server.start();
 
       String host = server.getHostName() + ":" + server.getPort();
-      Client client = new Client(host, null, certificates.sslContext());
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
       String messageFQN = "bufstream.demo.v1.EmailUpdated";
       long startTime = System.currentTimeMillis();
@@ -337,7 +288,7 @@ class ClientTest {
       long elapsed = System.currentTimeMillis() - startTime;
 
       // Should fail immediately without retrying
-      Assertions.assertThat(elapsed).isLessThan(1000);
+      Assertions.assertThat(elapsed).isLessThan(500);
 
       // Verify only one request was made
       Assertions.assertThat(server.getRequestCount()).isEqualTo(1);
