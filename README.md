@@ -9,7 +9,13 @@
 [![Slack](https://img.shields.io/badge/slack-buf-%23e01563)][badges_slack]
 
 [bsr-kafka-serde-java][bsr-kafka-serde-java] provides a Kafka serializer and deserializer in Java for working with schemas defined in the [Buf Schema Registry][bsr].
-It pairs with [Bufstream's semantic validation][bufstream-semantic-validation] feature, using Kafka record headers to automatically convert record values to and from Protobuf.
+It uses the following Kafka record headers to automatically deserialize record values from Protobuf:
+
+* `buf.registry.value.schema.message` - The full name of the Protobuf message stored in the record's value (e.g. `payment.v1alpha1.Order`).
+* `buf.registry.value.schema.commit` - The BSR commit ID for the Protobuf message's schema (e.g. `9a877cf260e1488d869a31fce3bea26d`).
+
+These headers are automatically added to records produced to Bufstream when Bufstream is configured to use [semantic validation][bufstream-semantic-validation].
+To use the deserializer with other brokers, it is up to producers to write record headers.
 
 ## Usage
 
@@ -143,6 +149,6 @@ Offered under the [Apache 2 license][license].
 [bsr]: https://buf.build/docs/bsr/
 [bsr-kafka-serde-java]: https://github.com/bufbuild/bsr-kafka-serde-java
 [buf]: https://buf.build
-[bufstream-semantic-validation]: https://buf.build/docs/bufstream/data-governance/semantic-validation/
+[bufstream-semantic-validation]: https://buf.build/docs/bufstream/semantic-validation/
 [kafka-producer-value-serializer]: https://kafka.apache.org/39/javadoc/org/apache/kafka/clients/producer/ProducerConfig.html#VALUE_SERIALIZER_CLASS_CONFIG
 [license]: LICENSE
