@@ -37,7 +37,8 @@ import org.apache.kafka.common.serialization.Deserializer;
  */
 public class ProtoDeserializer<T extends Message> implements Deserializer<T> {
 
-  public static final String HEADER_BUF_REGISTRY_VALUE_SCHEMA_COMMIT = "buf.registry.value.schema.commit";
+  public static final String HEADER_BUF_REGISTRY_VALUE_SCHEMA_COMMIT =
+      "buf.registry.value.schema.commit";
   public static final String HEADER_BUF_REGISTRY_VALUE_SCHEMA_MESSAGE =
       "buf.registry.value.schema.message";
 
