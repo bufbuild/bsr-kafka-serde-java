@@ -4,7 +4,7 @@
 
     <groupId>build.buf.bsr.kafka</groupId>
     <artifactId>bsr-kafka-serde</artifactId>
-    <version>0.1.2-SNAPSHOT</version>
+    <version>0.1.2</version>
 
     <name>bsr-kafka-serde</name>
     <description>
@@ -35,7 +35,7 @@
     <scm>
         <developerConnection>scm:git:https://github.com/bufbuild/bsr-kafka-serde-java.git</developerConnection>
         <url>https://github.com/bufbuild/bsr-kafka-serde-java</url>
-        <tag>HEAD</tag>
+        <tag>v0.1.2</tag>
     </scm>
 
     <properties>
