@@ -45,7 +45,7 @@
         <kafka.version>3.9.1</kafka.version>
         <logback.version>1.5.20</logback.version>
         <mockito.version>5.20.0</mockito.version>
-        <okhttp.version>5.2.1</okhttp.version>
+        <okhttp.version>5.3.0</okhttp.version>
         <okio.version>3.16.2</okio.version>
         <protobuf.version>3.25.8</protobuf.version>
         <slf4j.version>2.0.17</slf4j.version>
