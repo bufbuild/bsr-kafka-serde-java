@@ -61,30 +61,16 @@ final class BufManifest {
 
   static final String ATTRIBUTE_BUF_MODULE = "Buf-Module";
   static final String ATTRIBUTE_BUF_MODULE_COMMIT = "Buf-Module-Commit";
-  static final String ATTRIBUTE_BUF_PLUGIN = "Buf-Plugin";
-  static final String ATTRIBUTE_BUF_PLUGIN_VERSION = "Buf-Plugin-Version";
-  static final String ATTRIBUTE_BUF_PLUGIN_REVISION = "Buf-Plugin-Revision";
 
-  private static final BufManifest EMPTY = new BufManifest(null, null, null, null, null);
+  private static final BufManifest EMPTY = new BufManifest("", "");
   private static final ConcurrentMap<String, BufManifest> cache = new ConcurrentHashMap<>();
 
   private final String module;
   private final String moduleCommit;
-  private final String plugin;
-  private final String pluginVersion;
-  private final String pluginRevision;
 
-  private BufManifest(
-      String module,
-      String moduleCommit,
-      String plugin,
-      String pluginVersion,
-      String pluginRevision) {
+  private BufManifest(String module, String moduleCommit) {
     this.module = module;
     this.moduleCommit = moduleCommit;
-    this.plugin = plugin;
-    this.pluginVersion = pluginVersion;
-    this.pluginRevision = pluginRevision;
   }
 
   /**
@@ -123,50 +109,29 @@ final class BufManifest {
           return EMPTY;
         }
         Attributes attrs = manifest.getMainAttributes();
-        String module = attrs.getValue(ATTRIBUTE_BUF_MODULE);
-        String moduleCommit = attrs.getValue(ATTRIBUTE_BUF_MODULE_COMMIT);
-        String plugin = attrs.getValue(ATTRIBUTE_BUF_PLUGIN);
-        String pluginVersion = attrs.getValue(ATTRIBUTE_BUF_PLUGIN_VERSION);
-        String pluginRevision = attrs.getValue(ATTRIBUTE_BUF_PLUGIN_REVISION);
-        if (module == null
-            && moduleCommit == null
-            && plugin == null
-            && pluginVersion == null
-            && pluginRevision == null) {
+        String module = nullToEmpty(attrs.getValue(ATTRIBUTE_BUF_MODULE));
+        String moduleCommit = nullToEmpty(attrs.getValue(ATTRIBUTE_BUF_MODULE_COMMIT));
+        if (module.isEmpty() && moduleCommit.isEmpty()) {
           return EMPTY;
         }
-        return new BufManifest(module, moduleCommit, plugin, pluginVersion, pluginRevision);
+        return new BufManifest(module, moduleCommit);
       }
     } catch (IOException | URISyntaxException e) {
       return EMPTY;
     }
   }
 
-  /** Returns the BSR module reference (e.g., {@code buf.build/someorg/somemodule}), or null. */
+  /** Returns the BSR module reference (e.g., {@code buf.build/someorg/somemodule}), or empty. */
   String getModule() {
     return module;
   }
 
-  /** Returns the BSR module commit, or null. */
+  /** Returns the BSR module commit, or empty. */
   String getModuleCommit() {
     return moduleCommit;
   }
 
-  /**
-   * Returns the BSR plugin reference (e.g., {@code buf.build/protocolbuffers/java}), or null.
-   * Reserved for future use.
-   */
-  String getPlugin() {
-    return plugin;
-  }
-
-  /** Returns the BSR plugin version (e.g., {@code v34.0.0}), or null. Reserved for future use. */
-  String getPluginVersion() {
-    return pluginVersion;
-  }
-
-  /** Returns the BSR plugin revision (e.g., {@code 1}), or null. Reserved for future use. */
-  String getPluginRevision() {
-    return pluginRevision;
+  private static String nullToEmpty(String value) {
+    return value != null ? value : "";
   }
 }

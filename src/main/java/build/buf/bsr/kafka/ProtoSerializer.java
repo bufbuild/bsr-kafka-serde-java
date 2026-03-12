@@ -44,6 +44,7 @@ public final class ProtoSerializer<T extends Message> implements Serializer<T> {
     this(BufManifest::forClass);
   }
 
+  /** Package-private for testing. */
   ProtoSerializer(Function<Class<?>, BufManifest> manifestResolver) {
     this.manifestResolver = manifestResolver;
   }
@@ -73,7 +74,7 @@ public final class ProtoSerializer<T extends Message> implements Serializer<T> {
         ProtoDeserializer.HEADER_BUF_REGISTRY_VALUE_SCHEMA_MESSAGE,
         messageFQN.getBytes(StandardCharsets.UTF_8));
     String moduleCommit = manifestResolver.apply(data.getClass()).getModuleCommit();
-    if (moduleCommit != null) {
+    if (!moduleCommit.isEmpty()) {
       headers.add(
           ProtoDeserializer.HEADER_BUF_REGISTRY_VALUE_SCHEMA_COMMIT,
           moduleCommit.getBytes(StandardCharsets.UTF_8));

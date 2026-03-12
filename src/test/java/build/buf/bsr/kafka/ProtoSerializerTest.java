@@ -17,17 +17,11 @@ package build.buf.bsr.kafka;
 import build.buf.bsr.kafka.gen.bufstream.demo.v1.EmailUpdated;
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
-import java.util.jar.Attributes;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
-import java.util.jar.Manifest;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.assertj.core.api.Assertions;
@@ -89,7 +83,8 @@ class ProtoSerializerTest {
   @Test
   void serializeWithHeaders_setsCommitHeaderFromManifest() throws IOException {
     String expectedCommit = "a1b2c3d4e5f6789012345678901234ab";
-    URL jarUrl = createJarWithCommit(tempDir, expectedCommit);
+    URL jarUrl =
+        BufManifestTest.createJarWithBufEntries(tempDir, "buf.build/acme/petapis", expectedCommit);
     BufManifest manifest = BufManifest.fromJarLocation(jarUrl);
 
     EmailUpdated event =
@@ -114,18 +109,5 @@ class ProtoSerializerTest {
       Assertions.assertThat(new String(fqnHeader.value(), StandardCharsets.UTF_8))
           .isEqualTo(EmailUpdated.getDescriptor().getFullName());
     }
-  }
-
-  private static URL createJarWithCommit(Path dir, String commit) throws IOException {
-    Manifest manifest = new Manifest();
-    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
-    manifest.getMainAttributes().putValue(BufManifest.ATTRIBUTE_BUF_MODULE_COMMIT, commit);
-    Path jarPath = dir.resolve("test-sdk.jar");
-    try (OutputStream out = Files.newOutputStream(jarPath);
-        JarOutputStream jos = new JarOutputStream(out, manifest)) {
-      jos.putNextEntry(new JarEntry("placeholder.txt"));
-      jos.closeEntry();
-    }
-    return jarPath.toUri().toURL();
   }
 }

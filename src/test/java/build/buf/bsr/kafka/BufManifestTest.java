@@ -36,24 +36,21 @@ class BufManifestTest {
   void forClass_returnsEmptyForDirectoryClasspath() {
     // Test classes are loaded from a directory, not a JAR.
     BufManifest manifest = BufManifest.forClass(EmailUpdated.class);
-    Assertions.assertThat(manifest.getModule()).isNull();
-    Assertions.assertThat(manifest.getModuleCommit()).isNull();
-    Assertions.assertThat(manifest.getPlugin()).isNull();
-    Assertions.assertThat(manifest.getPluginVersion()).isNull();
-    Assertions.assertThat(manifest.getPluginRevision()).isNull();
+    Assertions.assertThat(manifest.getModule()).isEmpty();
+    Assertions.assertThat(manifest.getModuleCommit()).isEmpty();
   }
 
   @Test
   void forClass_returnsEmptyForJarWithoutBufEntries() {
     // Classes from third-party JARs that have no Buf manifest entries should return empty.
     BufManifest manifest = BufManifest.forClass(com.google.protobuf.Message.class);
-    Assertions.assertThat(manifest.getModuleCommit()).isNull();
+    Assertions.assertThat(manifest.getModuleCommit()).isEmpty();
   }
 
   @Test
   void fromJarLocation_returnsEmptyForNull() {
     BufManifest manifest = BufManifest.fromJarLocation(null);
-    Assertions.assertThat(manifest.getModuleCommit()).isNull();
+    Assertions.assertThat(manifest.getModuleCommit()).isEmpty();
   }
 
   @Test
@@ -61,26 +58,18 @@ class BufManifestTest {
     // A directory URL (e.g. from an exploded classpath) should return empty.
     URL dirUrl = tempDir.toUri().toURL();
     BufManifest manifest = BufManifest.fromJarLocation(dirUrl);
-    Assertions.assertThat(manifest.getModuleCommit()).isNull();
+    Assertions.assertThat(manifest.getModuleCommit()).isEmpty();
   }
 
   @Test
   void fromJarLocation_returnsManifestEntries() throws IOException {
     URL jarUrl =
         createJarWithBufEntries(
-            tempDir,
-            "buf.build/acme/petapis",
-            "a1b2c3d4e5f6789012345678901234ab",
-            "buf.build/protocolbuffers/java",
-            "v34.0.0",
-            "1");
+            tempDir, "buf.build/acme/petapis", "a1b2c3d4e5f6789012345678901234ab");
 
     BufManifest manifest = BufManifest.fromJarLocation(jarUrl);
     Assertions.assertThat(manifest.getModule()).isEqualTo("buf.build/acme/petapis");
     Assertions.assertThat(manifest.getModuleCommit()).isEqualTo("a1b2c3d4e5f6789012345678901234ab");
-    Assertions.assertThat(manifest.getPlugin()).isEqualTo("buf.build/protocolbuffers/java");
-    Assertions.assertThat(manifest.getPluginVersion()).isEqualTo("v34.0.0");
-    Assertions.assertThat(manifest.getPluginRevision()).isEqualTo("1");
   }
 
   @Test
@@ -88,30 +77,16 @@ class BufManifestTest {
     URL jarUrl = createJarWithoutBufEntries(tempDir);
 
     BufManifest manifest = BufManifest.fromJarLocation(jarUrl);
-    Assertions.assertThat(manifest.getModule()).isNull();
-    Assertions.assertThat(manifest.getModuleCommit()).isNull();
-    Assertions.assertThat(manifest.getPlugin()).isNull();
-    Assertions.assertThat(manifest.getPluginVersion()).isNull();
-    Assertions.assertThat(manifest.getPluginRevision()).isNull();
+    Assertions.assertThat(manifest.getModule()).isEmpty();
+    Assertions.assertThat(manifest.getModuleCommit()).isEmpty();
   }
 
-  private static URL createJarWithBufEntries(
-      Path dir,
-      String module,
-      String moduleCommit,
-      String plugin,
-      String pluginVersion,
-      String pluginRevision)
+  static URL createJarWithBufEntries(Path dir, String module, String moduleCommit)
       throws IOException {
     Manifest manifest = new Manifest();
     manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
     manifest.getMainAttributes().putValue(BufManifest.ATTRIBUTE_BUF_MODULE, module);
     manifest.getMainAttributes().putValue(BufManifest.ATTRIBUTE_BUF_MODULE_COMMIT, moduleCommit);
-    manifest.getMainAttributes().putValue(BufManifest.ATTRIBUTE_BUF_PLUGIN, plugin);
-    manifest.getMainAttributes().putValue(BufManifest.ATTRIBUTE_BUF_PLUGIN_VERSION, pluginVersion);
-    manifest
-        .getMainAttributes()
-        .putValue(BufManifest.ATTRIBUTE_BUF_PLUGIN_REVISION, pluginRevision);
     return writeJar(dir.resolve("test-buf.jar"), manifest);
   }
 
