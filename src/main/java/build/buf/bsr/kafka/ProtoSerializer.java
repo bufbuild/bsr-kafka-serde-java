@@ -15,20 +15,39 @@
 package build.buf.bsr.kafka;
 
 import com.google.protobuf.Message;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.function.Function;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serializer;
 
 /**
- * Protobuf serializer for the given message.
+ * Protobuf serializer for the given message type.
+ *
+ * <p>When called with the {@link #serialize(String, org.apache.kafka.common.header.Headers, Object)
+ * Headers overload}, this serializer always sets the {@value
+ * ProtoDeserializer#HEADER_BUF_REGISTRY_VALUE_SCHEMA_MESSAGE} header from the message descriptor.
+ * If the class was loaded from a JAR containing a {@value BufManifest#ATTRIBUTE_BUF_MODULE_COMMIT}
+ * manifest entry, it also sets the {@value
+ * ProtoDeserializer#HEADER_BUF_REGISTRY_VALUE_SCHEMA_COMMIT} header. See {@link BufManifest} for
+ * how to add that entry to the JAR.
  *
  * @param <T> Protobuf message type.
  */
 public final class ProtoSerializer<T extends Message> implements Serializer<T> {
 
+  private final Function<Class<?>, BufManifest> manifestResolver;
+
   /** Creates a new Protobuf serializer. */
-  public ProtoSerializer() {}
+  public ProtoSerializer() {
+    this(BufManifest::forClass);
+  }
+
+  /** Package-private for testing. */
+  ProtoSerializer(Function<Class<?>, BufManifest> manifestResolver) {
+    this.manifestResolver = manifestResolver;
+  }
 
   @Override
   public void configure(Map<String, ?> configs, boolean isKey) {
@@ -47,6 +66,19 @@ public final class ProtoSerializer<T extends Message> implements Serializer<T> {
 
   @Override
   public byte[] serialize(String topic, Headers headers, T data) {
-    return serialize(topic, data);
+    if (data == null) {
+      return null;
+    }
+    String messageFQN = data.getDescriptorForType().getFullName();
+    headers.add(
+        ProtoDeserializer.HEADER_BUF_REGISTRY_VALUE_SCHEMA_MESSAGE,
+        messageFQN.getBytes(StandardCharsets.UTF_8));
+    String moduleCommit = manifestResolver.apply(data.getClass()).getModuleCommit();
+    if (!moduleCommit.isEmpty()) {
+      headers.add(
+          ProtoDeserializer.HEADER_BUF_REGISTRY_VALUE_SCHEMA_COMMIT,
+          moduleCommit.getBytes(StandardCharsets.UTF_8));
+    }
+    return data.toByteArray();
   }
 }
