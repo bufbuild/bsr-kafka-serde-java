@@ -15,9 +15,10 @@
 package build.buf.bsr.kafka.examples;
 
 import build.buf.bsr.kafka.ProtoSerializer;
-import build.buf.bsr.kafka.gen.bufstream.demo.v1.EmailUpdated;
+import build.buf.bsr.kafka.gen.opentelemetry.proto.logs.v1.LogRecord;
+import java.time.Instant;
 import java.util.Properties;
-import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -33,13 +34,14 @@ public class ExampleProducer {
     // Set the value serializer to encode the message as Protobuf bytes
     producerConfig.setProperty(
         ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ProtoSerializer.class.getName());
-    EmailUpdated emailUpdateMsg =
-        EmailUpdated.newBuilder()
-            .setId(UUID.randomUUID().toString())
-            .setNewEmailAddress("newemail@mycompany.com")
+    LogRecord logRecord =
+        LogRecord.newBuilder()
+            .setTimeUnixNano(TimeUnit.SECONDS.toNanos(Instant.now().getEpochSecond()))
+            .setSeverityText("INFO")
+            .setEventName("demo")
             .build();
-    try (KafkaProducer<String, EmailUpdated> producer = new KafkaProducer<>(producerConfig)) {
-      producer.send(new ProducerRecord<>("my-topic", emailUpdateMsg.getId(), emailUpdateMsg));
+    try (KafkaProducer<String, LogRecord> producer = new KafkaProducer<>(producerConfig)) {
+      producer.send(new ProducerRecord<>("my-topic", "demo", logRecord));
     }
   }
 }

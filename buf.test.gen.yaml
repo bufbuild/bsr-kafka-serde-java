@@ -8,8 +8,5 @@ managed:
 plugins:
   - remote: buf.build/protocolbuffers/java:v25.8
     out: target/generated-test-sources/bufgen
-    exclude_types:
-      - "buf.confluent.v1"
-      - "buf.validate"
 inputs:
-  - module: demo.buf.dev/bufbuild/bufstream-demo:main
+  - module: buf.build/opentelemetry/opentelemetry

@@ -26,7 +26,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
@@ -120,9 +119,9 @@ public class SerdeTest {
                               "bufstream.validate.mode",
                               "reject",
                               "buf.registry.value.schema.message",
-                              "bufstream.demo.v1.EmailUpdated",
+                              "opentelemetry.proto.logs.v1.LogRecord",
                               "buf.registry.value.schema.module",
-                              "demo.buf.dev/bufbuild/bufstream-demo"))))
+                              "buf.build/opentelemetry/opentelemetry"))))
           .all()
           .get();
     }
@@ -134,18 +133,18 @@ public class SerdeTest {
     producerConfig.setProperty(
         ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ProtoSerializer.class.getName());
 
-    Path resourcePath = Paths.get("src/test/resources/email-updated-fds.binpb");
+    Path resourcePath = Paths.get("src/test/resources/log-record-fds.binpb");
     DescriptorProtos.FileDescriptorSet savedFds;
     try (FileInputStream fis = new FileInputStream(resourcePath.toFile())) {
       savedFds = DescriptorProtos.FileDescriptorSet.parseFrom(fis);
     }
     Descriptors.Descriptor descriptor =
-        Client.findMessageDescriptor(savedFds, "bufstream.demo.v1.EmailUpdated");
+        Client.findMessageDescriptor(savedFds, "opentelemetry.proto.logs.v1.LogRecord");
     Assertions.assertThat(descriptor).isNotNull();
     DynamicMessage message =
         DynamicMessage.newBuilder(descriptor)
-            .setField(descriptor.findFieldByName("id"), UUID.randomUUID().toString())
-            .setField(descriptor.findFieldByName("new_email_address"), "testemail@test.com")
+            .setField(descriptor.findFieldByName("severity_text"), "INFO")
+            .setField(descriptor.findFieldByName("event_name"), "demo")
             .build();
     try (Producer<String, Message> producer = new KafkaProducer<>(producerConfig)) {
       producer.send(new ProducerRecord<>(topicName, message));
@@ -160,7 +159,7 @@ public class SerdeTest {
     consumerConfig.setProperty(
         ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ProtoDeserializer.class.getName());
     consumerConfig.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
-    consumerConfig.setProperty(ProtoDeserializerConfig.BSR_HOST_CONFIG, "demo.buf.dev");
+    consumerConfig.setProperty(ProtoDeserializerConfig.BSR_HOST_CONFIG, "buf.build");
 
     try (Consumer<String, Message> consumer = new KafkaConsumer<>(consumerConfig)) {
       consumer.subscribe(List.of(topicName));
@@ -175,11 +174,12 @@ public class SerdeTest {
       Descriptors.Descriptor consumedDescriptor = consumedMessage.getDescriptorForType();
       Assertions.assertThat(consumedDescriptor.getFullName())
           .isEqualTo(message.getDescriptorForType().getFullName());
-      Assertions.assertThat(consumedMessage.getField(consumedDescriptor.findFieldByName("id")))
-          .isEqualTo(message.getField(descriptor.findFieldByName("id")));
       Assertions.assertThat(
-              consumedMessage.getField(consumedDescriptor.findFieldByName("new_email_address")))
-          .isEqualTo(message.getField(descriptor.findFieldByName("new_email_address")));
+              consumedMessage.getField(consumedDescriptor.findFieldByName("severity_text")))
+          .isEqualTo(message.getField(descriptor.findFieldByName("severity_text")));
+      Assertions.assertThat(
+              consumedMessage.getField(consumedDescriptor.findFieldByName("event_name")))
+          .isEqualTo(message.getField(descriptor.findFieldByName("event_name")));
     }
   }
 }
