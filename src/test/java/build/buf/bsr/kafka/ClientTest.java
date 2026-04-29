@@ -48,7 +48,7 @@ class ClientTest {
 
   @Test
   void testGetMessageDescriptor() throws Exception {
-    Path resourcePath = Paths.get("src/test/resources/email-updated-fds.binpb");
+    Path resourcePath = Paths.get("src/test/resources/log-record-fds.binpb");
     DescriptorProtos.FileDescriptorSet savedFds;
     try (FileInputStream fis = new FileInputStream(resourcePath.toFile())) {
       savedFds = DescriptorProtos.FileDescriptorSet.parseFrom(fis);
@@ -74,9 +74,9 @@ class ClientTest {
       String host = server.getHostName() + ":" + server.getPort();
       Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
-      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
       Descriptors.Descriptor messageDescriptor =
-          client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN);
+          client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN);
       Assertions.assertThat(messageDescriptor).isNotNull();
       Assertions.assertThat(messageDescriptor.getFullName()).isEqualTo(messageFQN);
 
@@ -118,7 +118,7 @@ class ClientTest {
       Client client = new Client(host, null, certificates.sslContext(), clock, 10, 500);
 
       String commitID = UUID.randomUUID().toString().replace("-", "");
-      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
       ExecutorService executor = Executors.newFixedThreadPool(numThreads);
       try {
         CountDownLatch latch = new CountDownLatch(numThreads);
@@ -174,7 +174,7 @@ class ClientTest {
 
   @Test
   void testRetryOnRetryableStatusCodes() throws Exception {
-    Path resourcePath = Paths.get("src/test/resources/email-updated-fds.binpb");
+    Path resourcePath = Paths.get("src/test/resources/log-record-fds.binpb");
     DescriptorProtos.FileDescriptorSet savedFds;
     try (FileInputStream fis = new FileInputStream(resourcePath.toFile())) {
       savedFds = DescriptorProtos.FileDescriptorSet.parseFrom(fis);
@@ -205,10 +205,10 @@ class ClientTest {
       String host = server.getHostName() + ":" + server.getPort();
       Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
-      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
       long startTime = System.currentTimeMillis();
       Descriptors.Descriptor messageDescriptor =
-          client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN);
+          client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN);
       long elapsed = System.currentTimeMillis() - startTime;
 
       Assertions.assertThat(messageDescriptor).isNotNull();
@@ -243,10 +243,10 @@ class ClientTest {
       String host = server.getHostName() + ":" + server.getPort();
       Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
-      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
       long startTime = System.currentTimeMillis();
       Assertions.assertThatThrownBy(
-              () -> client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN))
+              () -> client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN))
           .isInstanceOf(ClientException.class)
           .hasMessageContaining("HTTP 503");
       long elapsed = System.currentTimeMillis() - startTime;
@@ -279,10 +279,10 @@ class ClientTest {
       String host = server.getHostName() + ":" + server.getPort();
       Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
 
-      String messageFQN = "bufstream.demo.v1.EmailUpdated";
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
       long startTime = System.currentTimeMillis();
       Assertions.assertThatThrownBy(
-              () -> client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN))
+              () -> client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN))
           .isInstanceOf(ClientException.class)
           .hasMessageContaining("HTTP 404");
       long elapsed = System.currentTimeMillis() - startTime;
@@ -297,11 +297,11 @@ class ClientTest {
 
   @Test
   @EnabledIfSystemProperty(named = "bsr.integration", matches = "true")
-  void testGetMessageDescriptorAgainstDemoBufDev() {
-    Client client = new Client("demo.buf.dev", null);
-    String messageFQN = "bufstream.demo.v1.EmailUpdated";
+  void testGetMessageDescriptorAgainstBufBuild() {
+    Client client = new Client("buf.build", null);
+    String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
     Descriptors.Descriptor messageDescriptor =
-        client.getMessageDescriptor("5c792fd712d44915acba9b1b37d33c87", messageFQN);
+        client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN);
     Assertions.assertThat(messageDescriptor).isNotNull();
     Assertions.assertThat(messageDescriptor.getFullName()).isEqualTo(messageFQN);
   }

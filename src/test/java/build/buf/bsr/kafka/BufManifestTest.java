@@ -14,7 +14,7 @@
 
 package build.buf.bsr.kafka;
 
-import build.buf.bsr.kafka.gen.bufstream.demo.v1.EmailUpdated;
+import build.buf.bsr.kafka.gen.opentelemetry.proto.logs.v1.LogRecord;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URL;
@@ -35,7 +35,7 @@ class BufManifestTest {
   @Test
   void forClass_returnsEmptyForDirectoryClasspath() {
     // Test classes are loaded from a directory, not a JAR.
-    BufManifest manifest = BufManifest.forClass(EmailUpdated.class);
+    BufManifest manifest = BufManifest.forClass(LogRecord.class);
     Assertions.assertThat(manifest.getModule()).isEmpty();
     Assertions.assertThat(manifest.getModuleCommit()).isEmpty();
   }

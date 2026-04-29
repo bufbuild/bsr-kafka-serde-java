@@ -18,4 +18,4 @@ logging:
 
 schema_registry:
   bsr:
-    host: demo.buf.dev
+    host: buf.build

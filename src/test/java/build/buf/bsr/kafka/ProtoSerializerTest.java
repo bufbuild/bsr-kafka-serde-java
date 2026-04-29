@@ -14,14 +14,13 @@
 
 package build.buf.bsr.kafka;
 
-import build.buf.bsr.kafka.gen.bufstream.demo.v1.EmailUpdated;
+import build.buf.bsr.kafka.gen.opentelemetry.proto.logs.v1.LogRecord;
 import com.google.protobuf.InvalidProtocolBufferException;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.UUID;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.assertj.core.api.Assertions;
@@ -34,16 +33,16 @@ class ProtoSerializerTest {
 
   @Test
   void serialize() throws InvalidProtocolBufferException {
-    EmailUpdated event =
-        EmailUpdated.newBuilder()
-            .setId(UUID.randomUUID().toString())
-            .setNewEmailAddress("myemail@host.com")
+    LogRecord event =
+        LogRecord.newBuilder()
+            .setTimeUnixNano(1_700_000_000_000_000_000L)
+            .setSeverityText("INFO")
+            .setEventName("demo")
             .build();
-    try (ProtoSerializer<EmailUpdated> serializer = new ProtoSerializer<>()) {
+    try (ProtoSerializer<LogRecord> serializer = new ProtoSerializer<>()) {
       serializer.configure(Map.of(), false);
       RecordHeaders headers = new RecordHeaders();
-      EmailUpdated roundTrip =
-          EmailUpdated.parseFrom(serializer.serialize("my-topic", headers, event));
+      LogRecord roundTrip = LogRecord.parseFrom(serializer.serialize("my-topic", headers, event));
       Assertions.assertThat(roundTrip).isEqualTo(event);
 
       // Verify null data returns a null message and no headers are added.
@@ -55,12 +54,13 @@ class ProtoSerializerTest {
 
   @Test
   void serializeWithHeaders_setsMessageFQNHeader() {
-    EmailUpdated event =
-        EmailUpdated.newBuilder()
-            .setId(UUID.randomUUID().toString())
-            .setNewEmailAddress("myemail@host.com")
+    LogRecord event =
+        LogRecord.newBuilder()
+            .setTimeUnixNano(1_700_000_000_000_000_000L)
+            .setSeverityText("INFO")
+            .setEventName("demo")
             .build();
-    try (ProtoSerializer<EmailUpdated> serializer = new ProtoSerializer<>()) {
+    try (ProtoSerializer<LogRecord> serializer = new ProtoSerializer<>()) {
       serializer.configure(Map.of(), false);
       RecordHeaders headers = new RecordHeaders();
       serializer.serialize("my-topic", headers, event);
@@ -70,7 +70,7 @@ class ProtoSerializerTest {
           headers.lastHeader(ProtoDeserializer.HEADER_BUF_REGISTRY_VALUE_SCHEMA_MESSAGE);
       Assertions.assertThat(fqnHeader).isNotNull();
       Assertions.assertThat(new String(fqnHeader.value(), StandardCharsets.UTF_8))
-          .isEqualTo(EmailUpdated.getDescriptor().getFullName());
+          .isEqualTo(LogRecord.getDescriptor().getFullName());
 
       // Commit header is not set when the class is not loaded from a JAR with Buf manifest
       // entries (e.g., test classes loaded from the build output directory).
@@ -87,12 +87,13 @@ class ProtoSerializerTest {
         BufManifestTest.createJarWithBufEntries(tempDir, "buf.build/acme/petapis", expectedCommit);
     BufManifest manifest = BufManifest.fromJarLocation(jarUrl);
 
-    EmailUpdated event =
-        EmailUpdated.newBuilder()
-            .setId(UUID.randomUUID().toString())
-            .setNewEmailAddress("myemail@host.com")
+    LogRecord event =
+        LogRecord.newBuilder()
+            .setTimeUnixNano(1_700_000_000_000_000_000L)
+            .setSeverityText("INFO")
+            .setEventName("demo")
             .build();
-    try (ProtoSerializer<EmailUpdated> serializer = new ProtoSerializer<>(clazz -> manifest)) {
+    try (ProtoSerializer<LogRecord> serializer = new ProtoSerializer<>(clazz -> manifest)) {
       serializer.configure(Map.of(), false);
       RecordHeaders headers = new RecordHeaders();
       serializer.serialize("my-topic", headers, event);
@@ -107,7 +108,7 @@ class ProtoSerializerTest {
           headers.lastHeader(ProtoDeserializer.HEADER_BUF_REGISTRY_VALUE_SCHEMA_MESSAGE);
       Assertions.assertThat(fqnHeader).isNotNull();
       Assertions.assertThat(new String(fqnHeader.value(), StandardCharsets.UTF_8))
-          .isEqualTo(EmailUpdated.getDescriptor().getFullName());
+          .isEqualTo(LogRecord.getDescriptor().getFullName());
     }
   }
 }

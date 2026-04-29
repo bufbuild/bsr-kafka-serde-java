@@ -14,7 +14,7 @@
 
 package build.buf.bsr.kafka;
 
-import build.buf.bsr.kafka.gen.bufstream.demo.v1.EmailUpdated;
+import build.buf.bsr.kafka.gen.opentelemetry.proto.logs.v1.LogRecord;
 import com.google.protobuf.DynamicMessage;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -28,7 +28,7 @@ class ProtoDeserializerTest {
 
   @Test
   void deserializeNoHeaders() {
-    try (ProtoDeserializer<EmailUpdated> deserializer = new ProtoDeserializer<>()) {
+    try (ProtoDeserializer<LogRecord> deserializer = new ProtoDeserializer<>()) {
       deserializer.configure(
           Map.of(
               ProtoDeserializerConfig.BSR_HOST_CONFIG,
@@ -36,14 +36,15 @@ class ProtoDeserializerTest {
               ProtoDeserializerConfig.BSR_TOKEN_CONFIG,
               "mytoken",
               ProtoDeserializerConfig.VALUE_TYPE_CONFIG,
-              EmailUpdated.class.getName()),
+              LogRecord.class.getName()),
           false);
-      EmailUpdated event =
-          EmailUpdated.newBuilder()
-              .setId(UUID.randomUUID().toString())
-              .setNewEmailAddress("myemail@host.com")
+      LogRecord event =
+          LogRecord.newBuilder()
+              .setTimeUnixNano(1_700_000_000_000_000_000L)
+              .setSeverityText("INFO")
+              .setEventName("demo")
               .build();
-      EmailUpdated deserialized = deserializer.deserialize("some-topic", event.toByteArray());
+      LogRecord deserialized = deserializer.deserialize("some-topic", event.toByteArray());
       Assertions.assertThat(deserialized).isEqualTo(event);
     }
   }
@@ -61,13 +62,14 @@ class ProtoDeserializerTest {
       BSRClient mockClient = Mockito.mock(BSRClient.class);
       deserializer.client = mockClient;
       String commitID = UUID.randomUUID().toString().replace("-", "");
-      String messageFQN = EmailUpdated.class.getName();
+      String messageFQN = LogRecord.class.getName();
       Mockito.when(mockClient.getMessageDescriptor(commitID, messageFQN))
-          .thenReturn(EmailUpdated.getDescriptor());
-      EmailUpdated event =
-          EmailUpdated.newBuilder()
-              .setId(UUID.randomUUID().toString())
-              .setNewEmailAddress("myemail@host.com")
+          .thenReturn(LogRecord.getDescriptor());
+      LogRecord event =
+          LogRecord.newBuilder()
+              .setTimeUnixNano(1_700_000_000_000_000_000L)
+              .setSeverityText("INFO")
+              .setEventName("demo")
               .build();
       RecordHeaders headers = new RecordHeaders();
       headers.add(
@@ -80,18 +82,17 @@ class ProtoDeserializerTest {
           deserializer.deserialize("some-topic", headers, event.toByteArray());
       Mockito.verify(mockClient).getMessageDescriptor(commitID, messageFQN);
       Assertions.assertThat(
-              deserialized.getField(event.getDescriptorForType().findFieldByName("id")))
-          .isEqualTo(event.getId());
+              deserialized.getField(event.getDescriptorForType().findFieldByName("time_unix_nano")))
+          .isEqualTo(event.getTimeUnixNano());
       Assertions.assertThat(
-              deserialized.getField(
-                  event.getDescriptorForType().findFieldByName("new_email_address")))
-          .isEqualTo(event.getNewEmailAddress());
+              deserialized.getField(event.getDescriptorForType().findFieldByName("severity_text")))
+          .isEqualTo(event.getSeverityText());
     }
   }
 
   @Test
   void deserializeWithHeadersValueType() {
-    try (ProtoDeserializer<EmailUpdated> deserializer = new ProtoDeserializer<>()) {
+    try (ProtoDeserializer<LogRecord> deserializer = new ProtoDeserializer<>()) {
       deserializer.configure(
           Map.of(
               ProtoDeserializerConfig.BSR_HOST_CONFIG,
@@ -99,18 +100,19 @@ class ProtoDeserializerTest {
               ProtoDeserializerConfig.BSR_TOKEN_CONFIG,
               "mytoken",
               ProtoDeserializerConfig.VALUE_TYPE_CONFIG,
-              EmailUpdated.class.getName()),
+              LogRecord.class.getName()),
           false);
       BSRClient mockClient = Mockito.mock(BSRClient.class);
       String commitID = UUID.randomUUID().toString().replace("-", "");
-      String messageFQN = EmailUpdated.class.getName();
+      String messageFQN = LogRecord.class.getName();
       Mockito.when(mockClient.getMessageDescriptor(commitID, messageFQN))
-          .thenReturn(EmailUpdated.getDescriptor());
+          .thenReturn(LogRecord.getDescriptor());
       deserializer.client = mockClient;
-      EmailUpdated event =
-          EmailUpdated.newBuilder()
-              .setId(UUID.randomUUID().toString())
-              .setNewEmailAddress("myemail@host.com")
+      LogRecord event =
+          LogRecord.newBuilder()
+              .setTimeUnixNano(1_700_000_000_000_000_000L)
+              .setSeverityText("INFO")
+              .setEventName("demo")
               .build();
       RecordHeaders headers = new RecordHeaders();
       headers.add(
@@ -119,8 +121,7 @@ class ProtoDeserializerTest {
       headers.add(
           ProtoDeserializer.HEADER_BUF_REGISTRY_VALUE_SCHEMA_MESSAGE,
           messageFQN.getBytes(StandardCharsets.UTF_8));
-      EmailUpdated deserialized =
-          deserializer.deserialize("some-topic", headers, event.toByteArray());
+      LogRecord deserialized = deserializer.deserialize("some-topic", headers, event.toByteArray());
       Mockito.verify(mockClient).getMessageDescriptor(commitID, messageFQN);
       Assertions.assertThat(deserialized).isEqualTo(event);
     }
