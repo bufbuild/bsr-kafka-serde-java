@@ -51,6 +51,7 @@ import build.buf.bsr.kafka.ProtoSerializer;
 import build.buf.bsr.kafka.gen.opentelemetry.proto.logs.v1.LogRecord;
 import java.time.Instant;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -68,7 +69,7 @@ public class ExampleProducer {
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ProtoSerializer.class.getName());
         LogRecord logRecord =
                 LogRecord.newBuilder()
-                        .setTimeUnixNano(Instant.now().getEpochSecond() * 1_000_000_000L)
+                        .setTimeUnixNano(TimeUnit.SECONDS.toNanos(Instant.now().getEpochSecond()))
                         .setSeverityText("INFO")
                         .setEventName("demo")
                         .build();
