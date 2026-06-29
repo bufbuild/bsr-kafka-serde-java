@@ -43,7 +43,7 @@
         <buf.version>1.57.2</buf.version>
         <junit.version>6.1.0</junit.version>
         <kafka.version>3.9.2</kafka.version>
-        <logback.version>1.5.34</logback.version>
+        <logback.version>1.5.37</logback.version>
         <mockito.version>5.23.0</mockito.version>
         <okhttp.version>5.4.0</okhttp.version>
         <okio.version>3.17.0</okio.version>
