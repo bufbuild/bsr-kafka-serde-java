@@ -1,0 +1,12 @@
+# Automatically merge Dependabot PRs that pass CI and aren't major version bumps.
+name: dependabot-automerge
+on: pull_request
+permissions: {}
+jobs:
+  automerge:
+    uses: bufbuild/base-workflows/.github/workflows/dependabot-automerge.yaml@main
+    secrets:
+      DEPENDENCY_AUTOMERGE_APP_ID: ${{ secrets.DEPENDENCY_AUTOMERGE_APP_ID }}
+      DEPENDENCY_AUTOMERGE_APP_PRIVATE_KEY: ${{ secrets.DEPENDENCY_AUTOMERGE_APP_PRIVATE_KEY }}
+    with:
+      github-auto-merge: true
