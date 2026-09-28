@@ -44,7 +44,7 @@
         <junit.version>6.1.3</junit.version>
         <kafka.version>3.9.2</kafka.version>
         <logback.version>1.6.4</logback.version>
-        <mockito.version>5.23.0</mockito.version>
+        <mockito.version>5.24.0</mockito.version>
         <okhttp.version>5.5.0</okhttp.version>
         <okio.version>3.18.2</okio.version>
         <protobuf.version>3.25.9</protobuf.version>
