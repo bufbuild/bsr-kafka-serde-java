@@ -62,7 +62,7 @@ public final class ProtoDeserializerConfig extends AbstractConfig {
                 BSR_HOST_DOC)
             .define(
                 BSR_TOKEN_CONFIG,
-                ConfigDef.Type.STRING,
+                ConfigDef.Type.PASSWORD,
                 BSR_TOKEN_DEFAULT,
                 ConfigDef.Importance.HIGH,
                 BSR_TOKEN_DOC)
