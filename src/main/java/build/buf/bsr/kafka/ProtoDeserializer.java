@@ -64,7 +64,7 @@ public class ProtoDeserializer<T extends Message> implements Deserializer<T> {
           String.format(
               "required %s config not specified", ProtoDeserializerConfig.BSR_HOST_CONFIG));
     }
-    String token = config.getString(ProtoDeserializerConfig.BSR_TOKEN_CONFIG);
+    String token = config.getPassword(ProtoDeserializerConfig.BSR_TOKEN_CONFIG).value();
     this.client = new Client(host, token);
     Class<T> valueType = (Class<T>) config.getClass(ProtoDeserializerConfig.VALUE_TYPE_CONFIG);
     if (valueType != null && !Object.class.equals(valueType)) {
