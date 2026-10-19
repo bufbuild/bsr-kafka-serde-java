@@ -3,4 +3,4 @@ changelog:
     labels:
       - ignore-for-release
     authors:
-      - dependabot
+      - dependabot[bot]
