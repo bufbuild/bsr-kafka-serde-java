@@ -566,7 +566,7 @@
                 <configuration>
                     <publishingServerId>sonatype-central</publishingServerId>
                     <autoPublish>true</autoPublish>
-                    <waitUntil>published</waitUntil>
+                    <waitUntil>validated</waitUntil>
                 </configuration>
             </plugin>
         </plugins>
