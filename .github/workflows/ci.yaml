@@ -32,7 +32,7 @@ jobs:
           distribution: 'temurin'
           check-latest: true
           cache: 'maven'
-          server-id: 'central'
+          server-id: 'sonatype-central'
           server-username: SONATYPE_USERNAME
           server-password: SONATYPE_PASSWORD
       - name: Build
