@@ -19,6 +19,11 @@ import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.net.SocketException;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Clock;
@@ -34,6 +39,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.SSLHandshakeException;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
@@ -43,6 +49,7 @@ import okio.Buffer;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.mockito.Mockito;
 
 class ClientTest {
 
@@ -304,6 +311,93 @@ class ClientTest {
         client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN);
     Assertions.assertThat(messageDescriptor).isNotNull();
     Assertions.assertThat(messageDescriptor.getFullName()).isEqualTo(messageFQN);
+  }
+
+  @Test
+  void testRetryOnSocketExceptionRecoversViaFreshConnection() throws Exception {
+    Path resourcePath = Paths.get("src/test/resources/log-record-fds.binpb");
+    DescriptorProtos.FileDescriptorSet savedFds;
+    try (FileInputStream fis = new FileInputStream(resourcePath.toFile())) {
+      savedFds = DescriptorProtos.FileDescriptorSet.parseFrom(fis);
+    }
+    GetFileDescriptorSetResponse response =
+        GetFileDescriptorSetResponse.newBuilder().setFileDescriptorSet(savedFds).build();
+
+    @SuppressWarnings("unchecked")
+    HttpResponse<byte[]> fakeResponse = Mockito.mock(HttpResponse.class);
+    Mockito.when(fakeResponse.statusCode()).thenReturn(200);
+    Mockito.when(fakeResponse.body()).thenReturn(response.toByteArray());
+
+    HttpClient mockHttpClient = Mockito.mock(HttpClient.class);
+    Mockito.when(
+            mockHttpClient.send(
+                Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<byte[]>>any()))
+        .thenThrow(new SocketException("Connection reset"))
+        .thenReturn(fakeResponse);
+
+    Client client = clientWithMockHttpClient(mockHttpClient, 10, 2000);
+    String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
+    Descriptors.Descriptor messageDescriptor = client.getMessageDescriptor("commit1", messageFQN);
+
+    Assertions.assertThat(messageDescriptor.getFullName()).isEqualTo(messageFQN);
+    Mockito.verify(mockHttpClient, Mockito.times(2))
+        .send(Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<byte[]>>any());
+  }
+
+  @Test
+  void testSocketExceptionRetryExhaustion() throws Exception {
+    HttpClient mockHttpClient = Mockito.mock(HttpClient.class);
+    Mockito.when(
+            mockHttpClient.send(
+                Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<byte[]>>any()))
+        .thenThrow(new SocketException("Connection reset"));
+
+    Client client = clientWithMockHttpClient(mockHttpClient, 10, 500);
+    String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
+
+    long startTime = System.currentTimeMillis();
+    Assertions.assertThatThrownBy(() -> client.getMessageDescriptor("commit1", messageFQN))
+        .isInstanceOf(ClientException.class)
+        .hasCauseInstanceOf(SocketException.class);
+    long elapsed = System.currentTimeMillis() - startTime;
+
+    // Verify retries were attempted with exponential backoff up to 500ms total
+    Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(500);
+    Mockito.verify(mockHttpClient, Mockito.atLeast(2))
+        .send(Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<byte[]>>any());
+  }
+
+  @Test
+  void testNoRetryOnNonSocketIOException() throws Exception {
+    HttpClient mockHttpClient = Mockito.mock(HttpClient.class);
+    Mockito.when(
+            mockHttpClient.send(
+                Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<byte[]>>any()))
+        .thenThrow(new SSLHandshakeException("Remote host terminated the handshake"));
+
+    Client client = clientWithMockHttpClient(mockHttpClient, 10, 500);
+    String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
+
+    Assertions.assertThatThrownBy(() -> client.getMessageDescriptor("commit1", messageFQN))
+        .isInstanceOf(ClientException.class)
+        .hasRootCauseInstanceOf(SSLHandshakeException.class);
+
+    // Should fail immediately without retrying
+    Mockito.verify(mockHttpClient, Mockito.times(1))
+        .send(Mockito.any(HttpRequest.class), Mockito.<HttpResponse.BodyHandler<byte[]>>any());
+  }
+
+  /**
+   * A {@link Client} wired to a mock {@code HttpClient}, bypassing it being {@code private final}.
+   */
+  private static Client clientWithMockHttpClient(
+      HttpClient mockHttpClient, long initialBackoffMs, long maxTotalBackoffMs) throws Exception {
+    Client client =
+        new Client("mock-host", null, null, Clock.systemUTC(), initialBackoffMs, maxTotalBackoffMs);
+    Field clientField = Client.class.getDeclaredField("client");
+    clientField.setAccessible(true);
+    clientField.set(client, mockHttpClient);
+    return client;
   }
 
   private static HeldCertificate createSelfSignedCertificate() {

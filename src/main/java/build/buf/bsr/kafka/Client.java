@@ -20,6 +20,7 @@ import build.buf.bsr.kafka.gen.buf.registry.module.v1.ResourceRef;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
 import java.io.IOException;
+import java.net.SocketException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -206,19 +207,7 @@ final class Client implements BSRClient {
           boolean shouldRetry = RETRYABLE_STATUS_CODES.contains(response.statusCode());
 
           if (shouldRetry && totalBackoffMs < this.maxTotalBackoffMs) {
-            // Calculate backoff with jitter to prevent thundering herd
-            long remainingBackoffMs = this.maxTotalBackoffMs - totalBackoffMs;
-            long jitterMs = ThreadLocalRandom.current().nextLong(JITTER_MAX_MS);
-            long backoffMs = Math.min(currentBackoffMs + jitterMs, remainingBackoffMs);
-
-            try {
-              Thread.sleep(backoffMs);
-            } catch (InterruptedException ie) {
-              Thread.currentThread().interrupt();
-              throw new ClientException(
-                  String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), ie);
-            }
-
+            long backoffMs = sleepWithBackoff(currentBackoffMs, totalBackoffMs);
             totalBackoffMs += backoffMs;
             currentBackoffMs *= 2; // Exponential backoff
           } else {
@@ -239,6 +228,15 @@ final class Client implements BSRClient {
           }
           return descriptor;
         }
+      } catch (SocketException e) {
+        // Retry a reset/refused/broken-pipe transient error. Can arise from an idle connection.
+        if (totalBackoffMs < this.maxTotalBackoffMs) {
+          long backoffMs = sleepWithBackoff(currentBackoffMs, totalBackoffMs);
+          totalBackoffMs += backoffMs;
+          currentBackoffMs *= 2;
+        } else {
+          throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
+        }
       } catch (IOException e) {
         throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
       } catch (InterruptedException e) {
@@ -246,6 +244,20 @@ final class Client implements BSRClient {
         throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
       }
     }
+  }
+
+  /** Sleeps for a jittered backoff capped by the remaining budget, and returns the amount slept. */
+  private long sleepWithBackoff(long currentBackoffMs, long totalBackoffMs) {
+    long remainingBackoffMs = this.maxTotalBackoffMs - totalBackoffMs;
+    long jitterMs = ThreadLocalRandom.current().nextLong(JITTER_MAX_MS);
+    long backoffMs = Math.min(currentBackoffMs + jitterMs, remainingBackoffMs);
+    try {
+      Thread.sleep(backoffMs);
+    } catch (InterruptedException ie) {
+      Thread.currentThread().interrupt();
+      throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), ie);
+    }
+    return backoffMs;
   }
 
   static Descriptors.Descriptor findMessageDescriptor(
