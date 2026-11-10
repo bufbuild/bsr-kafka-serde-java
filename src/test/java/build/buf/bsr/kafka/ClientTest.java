@@ -128,17 +128,16 @@ class ClientTest {
         List<Future<Descriptors.Descriptor>> futures = new ArrayList<>();
         for (int i = 0; i < numThreads; i++) {
           futures.add(
-              executor.submit(
-                  () -> {
-                    latch.countDown();
-                    try {
-                      latch.await();
-                    } catch (InterruptedException e) {
-                      Thread.currentThread().interrupt();
-                      throw new RuntimeException(e);
-                    }
-                    return client.getMessageDescriptor(commitID, messageFQN);
-                  }));
+              executor.submit(() -> {
+                latch.countDown();
+                try {
+                  latch.await();
+                } catch (InterruptedException e) {
+                  Thread.currentThread().interrupt();
+                  throw new RuntimeException(e);
+                }
+                return client.getMessageDescriptor(commitID, messageFQN);
+              }));
         }
         for (Future<Descriptors.Descriptor> future : futures) {
           Assertions.assertThatThrownBy(future::get)
