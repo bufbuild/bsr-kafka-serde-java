@@ -17,6 +17,7 @@ package build.buf.bsr.kafka;
 import build.buf.bsr.kafka.gen.buf.registry.module.v1.GetFileDescriptorSetResponse;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
+import com.google.protobuf.InvalidProtocolBufferException;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -34,9 +35,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.net.ssl.SSLException;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
+import okhttp3.mockwebserver.SocketPolicy;
 import okhttp3.tls.HandshakeCertificates;
 import okhttp3.tls.HeldCertificate;
 import okio.Buffer;
@@ -291,6 +294,138 @@ class ClientTest {
       Assertions.assertThat(elapsed).isLessThan(500);
 
       // Verify only one request was made
+      Assertions.assertThat(server.getRequestCount()).isEqualTo(1);
+    }
+  }
+
+  @Test
+  void testRetryOnDroppedConnection() throws Exception {
+    Path resourcePath = Paths.get("src/test/resources/log-record-fds.binpb");
+    DescriptorProtos.FileDescriptorSet savedFds;
+    try (FileInputStream fis = new FileInputStream(resourcePath.toFile())) {
+      savedFds = DescriptorProtos.FileDescriptorSet.parseFrom(fis);
+    }
+
+    HeldCertificate serverCertificate = createSelfSignedCertificate();
+    HandshakeCertificates certificates =
+        new HandshakeCertificates.Builder()
+            .heldCertificate(serverCertificate)
+            .addTrustedCertificate(serverCertificate.certificate())
+            .build();
+
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(certificates.sslSocketFactory(), false);
+
+      server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST));
+
+      Buffer buffer = new Buffer();
+      GetFileDescriptorSetResponse response =
+          GetFileDescriptorSetResponse.newBuilder().setFileDescriptorSet(savedFds).build();
+      buffer.write(response.toByteArray());
+      server.enqueue(new MockResponse().setBody(buffer));
+
+      server.start();
+
+      String host = server.getHostName() + ":" + server.getPort();
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
+
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
+      Descriptors.Descriptor messageDescriptor =
+          client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN);
+
+      Assertions.assertThat(messageDescriptor).isNotNull();
+      Assertions.assertThat(messageDescriptor.getFullName()).isEqualTo(messageFQN);
+      Assertions.assertThat(server.getRequestCount()).isEqualTo(2);
+    }
+  }
+
+  @Test
+  void testDroppedConnectionRetryExhaustion() throws IOException {
+    HeldCertificate serverCertificate = createSelfSignedCertificate();
+    HandshakeCertificates certificates =
+        new HandshakeCertificates.Builder()
+            .heldCertificate(serverCertificate)
+            .addTrustedCertificate(serverCertificate.certificate())
+            .build();
+
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(certificates.sslSocketFactory(), false);
+
+      for (int i = 0; i < 10; i++) {
+        server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST));
+      }
+      server.start();
+
+      String host = server.getHostName() + ":" + server.getPort();
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
+
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
+      long startTime = System.currentTimeMillis();
+      Assertions.assertThatThrownBy(
+              () -> client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN))
+          .isInstanceOf(ClientException.class)
+          .hasCauseInstanceOf(IOException.class);
+      long elapsed = System.currentTimeMillis() - startTime;
+
+      Assertions.assertThat(elapsed).isGreaterThanOrEqualTo(500);
+      Assertions.assertThat(server.getRequestCount()).isGreaterThan(1);
+    }
+  }
+
+  @Test
+  void testNoRetryOnTlsFailure() throws IOException {
+    HeldCertificate serverCertificate = createSelfSignedCertificate();
+    HandshakeCertificates serverCertificates =
+        new HandshakeCertificates.Builder().heldCertificate(serverCertificate).build();
+    HandshakeCertificates untrustingClientCertificates =
+        new HandshakeCertificates.Builder()
+            .addTrustedCertificate(createSelfSignedCertificate().certificate())
+            .build();
+
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(serverCertificates.sslSocketFactory(), false);
+      server.start();
+
+      String host = server.getHostName() + ":" + server.getPort();
+      Client client =
+          new Client(
+              host, null, untrustingClientCertificates.sslContext(), Clock.systemUTC(), 1000, 5000);
+
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
+      long startTime = System.currentTimeMillis();
+      Assertions.assertThatThrownBy(
+              () -> client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN))
+          .isInstanceOf(ClientException.class)
+          .hasCauseInstanceOf(SSLException.class);
+      long elapsed = System.currentTimeMillis() - startTime;
+
+      // A single retry would have slept at least the 1000ms initial backoff.
+      Assertions.assertThat(elapsed).isLessThan(1000);
+    }
+  }
+
+  @Test
+  void testNoRetryOnMalformedResponse() throws IOException {
+    HeldCertificate serverCertificate = createSelfSignedCertificate();
+    HandshakeCertificates certificates =
+        new HandshakeCertificates.Builder()
+            .heldCertificate(serverCertificate)
+            .addTrustedCertificate(serverCertificate.certificate())
+            .build();
+
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(certificates.sslSocketFactory(), false);
+      server.enqueue(new MockResponse().setBody(new Buffer().write(new byte[] {(byte) 0xFF})));
+      server.start();
+
+      String host = server.getHostName() + ":" + server.getPort();
+      Client client = new Client(host, null, certificates.sslContext(), Clock.systemUTC(), 10, 500);
+
+      String messageFQN = "opentelemetry.proto.logs.v1.LogRecord";
+      Assertions.assertThatThrownBy(
+              () -> client.getMessageDescriptor("5f2c7d4f740541589805e0816dad4bb0", messageFQN))
+          .isInstanceOf(ClientException.class)
+          .hasCauseInstanceOf(InvalidProtocolBufferException.class);
       Assertions.assertThat(server.getRequestCount()).isEqualTo(1);
     }
   }
