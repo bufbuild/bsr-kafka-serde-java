@@ -19,11 +19,15 @@ import build.buf.bsr.kafka.gen.buf.registry.module.v1.GetFileDescriptorSetRespon
 import build.buf.bsr.kafka.gen.buf.registry.module.v1.ResourceRef;
 import com.google.protobuf.DescriptorProtos;
 import com.google.protobuf.Descriptors;
+import com.google.protobuf.InvalidProtocolBufferException;
 import java.io.IOException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.nio.channels.UnresolvedAddressException;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -40,6 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ThreadLocalRandom;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 
 final class Client implements BSRClient {
 
@@ -201,35 +206,7 @@ final class Client implements BSRClient {
       try {
         HttpResponse<byte[]> response =
             client.send(httpRequest, HttpResponse.BodyHandlers.ofByteArray());
-        if (response.statusCode() != 200) {
-          // Check if we should retry on this status code
-          boolean shouldRetry = RETRYABLE_STATUS_CODES.contains(response.statusCode());
-
-          if (shouldRetry && totalBackoffMs < this.maxTotalBackoffMs) {
-            // Calculate backoff with jitter to prevent thundering herd
-            long remainingBackoffMs = this.maxTotalBackoffMs - totalBackoffMs;
-            long jitterMs = ThreadLocalRandom.current().nextLong(JITTER_MAX_MS);
-            long backoffMs = Math.min(currentBackoffMs + jitterMs, remainingBackoffMs);
-
-            try {
-              Thread.sleep(backoffMs);
-            } catch (InterruptedException ie) {
-              Thread.currentThread().interrupt();
-              throw new ClientException(
-                  String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), ie);
-            }
-
-            totalBackoffMs += backoffMs;
-            currentBackoffMs *= 2; // Exponential backoff
-          } else {
-            throw new ClientException(
-                String.format(
-                    "%s failed: HTTP %d - %s",
-                    METHOD_GET_FILE_DESCRIPTOR_SET,
-                    response.statusCode(),
-                    new String(response.body(), StandardCharsets.UTF_8)));
-          }
-        } else {
+        if (response.statusCode() == 200) {
           GetFileDescriptorSetResponse bsrResponse =
               GetFileDescriptorSetResponse.parseFrom(response.body());
           Descriptors.Descriptor descriptor =
@@ -239,13 +216,50 @@ final class Client implements BSRClient {
           }
           return descriptor;
         }
-      } catch (IOException e) {
+        if (!RETRYABLE_STATUS_CODES.contains(response.statusCode())
+            || totalBackoffMs >= this.maxTotalBackoffMs) {
+          throw new ClientException(
+              String.format(
+                  "%s failed: HTTP %d - %s",
+                  METHOD_GET_FILE_DESCRIPTOR_SET,
+                  response.statusCode(),
+                  new String(response.body(), StandardCharsets.UTF_8)));
+        }
+      } catch (InvalidProtocolBufferException e) {
         throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
+      } catch (IOException e) {
+        if (!isRetryableIOException(e) || totalBackoffMs >= this.maxTotalBackoffMs) {
+          throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
+        }
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
       }
+
+      long remainingBackoffMs = this.maxTotalBackoffMs - totalBackoffMs;
+      long jitterMs = ThreadLocalRandom.current().nextLong(JITTER_MAX_MS);
+      long backoffMs = Math.min(currentBackoffMs + jitterMs, remainingBackoffMs);
+      try {
+        Thread.sleep(backoffMs);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        throw new ClientException(String.format("%s failed", METHOD_GET_FILE_DESCRIPTOR_SET), e);
+      }
+      totalBackoffMs += backoffMs;
+      currentBackoffMs *= 2;
     }
+  }
+
+  private static boolean isRetryableIOException(IOException e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof SSLException
+          || t instanceof UnknownHostException
+          || t instanceof UnresolvedAddressException
+          || t instanceof HttpTimeoutException) {
+        return false;
+      }
+    }
+    return true;
   }
 
   static Descriptors.Descriptor findMessageDescriptor(
